@@ -20,8 +20,9 @@ export default async function handler(req, res) {
     if (!/^[a-f0-9]{64}$/i.test(String(token || '')) || !candidato || typeof candidato !== 'object') {
       return res.status(400).json({ error: 'Dados do formulário inválidos.' });
     }
-    if (!String(candidato.nomeCompleto || '').trim() || !String(candidato.cpf || '').trim() || candidato.autorizacaoAceita !== true) {
-      return res.status(400).json({ error: 'Confira o nome, CPF e autorização de uso dos dados.' });
+    const emailContato = String(candidato.email || '').trim();
+    if (!String(candidato.nomeCompleto || '').trim() || !String(candidato.cpf || '').trim() || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(emailContato) || candidato.autorizacaoAceita !== true) {
+      return res.status(400).json({ error: 'Confira o nome, CPF, e-mail para contato e autorização de uso dos dados.' });
     }
 
     const admin = createClient(URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
