@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { supabase, supabaseConfigurado } from './supabase';
 import {
   Building2,
   UserPlus,
@@ -224,6 +225,11 @@ export default function App() {
   // Controle de navegação entre as 3 abas principais
   const [activeTab, setActiveTab] = useState('rh'); // 'rh' | 'candidato' | 'ficha'
   const [modoCandidatoExclusivo, setModoCandidatoExclusivo] = useState(false);
+  const [rhUser, setRhUser] = useState(null);
+  const [emailLogin, setEmailLogin] = useState('ana.financeirocdt@gmail.com');
+  const [enviandoLogin, setEnviandoLogin] = useState(false);
+  const [carregandoFichas, setCarregandoFichas] = useState(false);
+  const [erroLogin, setErroLogin] = useState('');
 
   // Estado dos dados preenchidos pelo RH
   const [rhConfig, setRhConfig] = useState({
@@ -245,15 +251,8 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState(null);
   const [filtroHistorico, setFiltroHistorico] = useState('');
 
-  // Histórico de fichas salvas localmente no navegador (localStorage)
-  const [fichasSalvas, setFichasSalvas] = useState(() => {
-    try {
-      const saved = localStorage.getItem('amorsaude_cdt_fichas_v1');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Fichas recebidas do banco de dados Supabase
+  const [fichasSalvas, setFichasSalvas] = useState([]);
 
   const empresaAtual = useMemo(
     () => EMPRESAS_DATA.find((e) => e.id === rhConfig.empresaId) || EMPRESAS_DATA[0],
@@ -263,6 +262,81 @@ export default function App() {
   const showToast = (msg, type = 'success') => {
     setToastMsg({ msg, type });
     setTimeout(() => setToastMsg(null), 4000);
+  };
+
+  // Autenticação do RH e carregamento das fichas compartilhadas no banco.
+  useEffect(() => {
+    if (!supabaseConfigurado || !supabase) return;
+
+    let ativo = true;
+    const carregarFichas = async (user) => {
+      if (!user || user.email?.toLowerCase() !== 'ana.financeirocdt@gmail.com') {
+        if (ativo) {
+          setRhUser(null);
+          setFichasSalvas([]);
+        }
+        return;
+      }
+
+      if (ativo) {
+        setRhUser(user);
+        setCarregandoFichas(true);
+      }
+
+      const { data, error } = await supabase
+        .from('fichas')
+        .select('id, criado_em, rh, empresa, candidato')
+        .order('criado_em', { ascending: false });
+
+      if (!ativo) return;
+      if (error) {
+        showToast('Não foi possível carregar as fichas: ' + error.message, 'error');
+        setFichasSalvas([]);
+      } else {
+        setFichasSalvas((data || []).map((row) => ({
+          id: row.id,
+          criadoEm: new Date(row.criado_em).toLocaleString('pt-BR'),
+          rh: row.rh || {},
+          empresa: row.empresa || {},
+          candidato: row.candidato || {},
+        })));
+      }
+      setCarregandoFichas(false);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      carregarFichas(data.session?.user || null);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      carregarFichas(session?.user || null);
+    });
+
+    return () => {
+      ativo = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLoginRH = async (e) => {
+    e.preventDefault();
+    if (!supabaseConfigurado || !supabase) {
+      setErroLogin('A conexão com o banco de dados não está configurada. Confira as variáveis da Vercel.');
+      return;
+    }
+    if (emailLogin.trim().toLowerCase() !== 'ana.financeirocdt@gmail.com') {
+      setErroLogin('Este e-mail não está autorizado para acessar o Painel RH.');
+      return;
+    }
+    setEnviandoLogin(true);
+    setErroLogin('');
+    const { error } = await supabase.auth.signInWithOtp({
+      email: emailLogin.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setEnviandoLogin(false);
+    if (error) setErroLogin('Erro ao enviar o link: ' + error.message);
+    else setErroLogin('Enviamos um link de acesso para seu e-mail. Abra a mensagem neste mesmo navegador para entrar no RH.');
   };
 
   // Lê parâmetros pré-preenchidos na URL ao abrir o link enviado pelo RH
@@ -326,16 +400,6 @@ export default function App() {
       }
     }
   }, []);
-
-  // Salva histórico no localStorage sempre que atualizar
-  const salvarHistorico = (novaLista) => {
-    setFichasSalvas(novaLista);
-    try {
-      localStorage.setItem('amorsaude_cdt_fichas_v1', JSON.stringify(novaLista));
-    } catch (e) {
-      console.error('Erro ao salvar no localStorage:', e);
-    }
-  };
 
   // Quando troca a Empresa no RH, seleciona automaticamente o primeiro cargo, salário e tempo de contrato dela
   const handleEmpresaChange = (novoEmpresaId) => {
@@ -451,8 +515,8 @@ export default function App() {
     }));
   };
 
-  // Submissão do formulário do candidato -> gera ficha oficial
-  const handleConcluirCandidato = (e) => {
+  // Envia a ficha concluída para o banco compartilhado com o RH.
+  const handleConcluirCandidato = async (e) => {
     e.preventDefault();
     if (!candidatoData.nomeCompleto.trim() || !candidatoData.cpf.trim()) {
       showToast('Preencha pelo menos seu Nome Completo e CPF para gerar a ficha.', 'error');
@@ -462,10 +526,12 @@ export default function App() {
       showToast('Por favor, marque a caixa de autorização de uso dos dados no final do formulário.', 'error');
       return;
     }
+    if (!supabaseConfigurado || !supabase) {
+      showToast('Não foi possível conectar ao banco de dados. Avise o RH.', 'error');
+      return;
+    }
 
-    const novaFicha = {
-      id: Date.now().toString(),
-      criadoEm: new Date().toLocaleString('pt-BR'),
+    const payload = {
       rh: { ...rhConfig },
       empresa: {
         nome: empresaAtual.nome,
@@ -475,11 +541,21 @@ export default function App() {
       candidato: { ...candidatoData },
     };
 
-    const atualizadas = [novaFicha, ...fichasSalvas];
-    salvarHistorico(atualizadas);
+    const { data, error } = await supabase
+      .from('fichas')
+      .insert(payload)
+      .select('id, criado_em')
+      .single();
+
+    if (error) {
+      console.error('Erro ao enviar ficha:', error);
+      showToast('A ficha não foi enviada. Tente novamente ou avise o RH. ' + error.message, 'error');
+      return;
+    }
+
     setActiveTab('ficha');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    showToast('Ficha de Registro gerada com sucesso! Clique em "Salvar em PDF / Imprimir".');
+    showToast('Ficha enviada ao RH com sucesso! Agora você pode salvar/imprimir seu comprovante.');
   };
 
   // Abre uma ficha salva do histórico para visualização/impressão
@@ -490,20 +566,67 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleExcluirFichaHistorico = (id) => {
-    const filtradas = fichasSalvas.filter((f) => f.id !== id);
-    salvarHistorico(filtradas);
-    showToast('Registro removido do histórico local.', 'info');
+  const handleExcluirFichaHistorico = async (id) => {
+    if (!supabase || !rhUser) return;
+    const { error } = await supabase.from('fichas').delete().eq('id', id);
+    if (error) {
+      showToast('Não foi possível excluir a ficha: ' + error.message, 'error');
+      return;
+    }
+    setFichasSalvas((atuais) => atuais.filter((f) => f.id !== id));
+    showToast('Ficha excluída do banco de dados.', 'info');
   };
 
   const fichasFiltradas = fichasSalvas.filter((f) => {
     const q = filtroHistorico.toLowerCase();
     return (
-      f.candidato.nomeCompleto.toLowerCase().includes(q) ||
-      f.empresa.nomeCurto.toLowerCase().includes(q) ||
-      f.rh.cargo.toLowerCase().includes(q)
+      (f.candidato?.nomeCompleto || '').toLowerCase().includes(q) ||
+      (f.empresa?.nomeCurto || '').toLowerCase().includes(q) ||
+      (f.rh?.cargo || '').toLowerCase().includes(q)
     );
   });
+
+  if (!modoCandidatoExclusivo && !rhUser) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">Acesso do RH</h1>
+              <p className="text-xs text-slate-500">Portal Admissão RH • Sayddel</p>
+            </div>
+          </div>
+          <p className="text-sm text-slate-600 mb-5">
+            Para acessar as fichas recebidas e configurar admissões, solicite um link seguro de acesso por e-mail.
+          </p>
+          <form onSubmit={handleLoginRH} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">E-mail autorizado</label>
+              <input
+                type="email"
+                value={emailLogin}
+                onChange={(e) => setEmailLogin(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={enviandoLogin}
+              className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-sm py-3"
+            >
+              {enviandoLogin ? 'Enviando link...' : 'Enviar link de acesso'}
+            </button>
+          </form>
+          {erroLogin && <p className="mt-4 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3">{erroLogin}</p>}
+          {!supabaseConfigurado && <p className="mt-4 text-xs text-rose-700">Banco de dados não configurado. Verifique as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY na Vercel.</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans">
@@ -622,6 +745,9 @@ export default function App() {
 
 
           </nav>
+          {rhUser && !modoCandidatoExclusivo && (
+            <button type="button" onClick={() => supabase.auth.signOut()} className="self-end md:self-auto text-xs text-slate-300 hover:text-white underline">Sair do RH</button>
+          )}
         </div>
       </header>
 
@@ -936,7 +1062,7 @@ export default function App() {
                 <div>
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <Users className="w-5 h-5 text-blue-900" />
-                    Fichas Preenchidas &amp; Histórico Local ({fichasSalvas.length})
+                    Fichas Recebidas ({fichasSalvas.length})
                   </h3>
                   <p className="text-xs text-slate-500">
                     Acesse rapidamente qualquer ficha concluída para emitir o PDF da Sayddel Contabilidade.
@@ -960,10 +1086,10 @@ export default function App() {
                 <div className="p-8 text-center text-slate-400">
                   <FileText className="w-10 h-10 mx-auto mb-2 opacity-40" />
                   <p className="text-sm font-medium text-slate-600">
-                    Nenhuma ficha finalizada ainda neste navegador.
+                    {carregandoFichas ? 'Carregando fichas recebidas...' : 'Nenhuma ficha recebida ainda.'}
                   </p>
                   <p className="text-xs mt-1">
-                    Quando um candidato concluir o formulário, a ficha aparecerá aqui pronta para imprimir.
+                    Quando um candidato concluir e enviar o formulário, a ficha aparecerá aqui para conferência e impressão.
                   </p>
                 </div>
               ) : (
