@@ -225,6 +225,8 @@ export default function App() {
   // Controle de navegação entre as 3 abas principais
   const [activeTab, setActiveTab] = useState('rh'); // 'rh' | 'candidato' | 'ficha'
   const [modoCandidatoExclusivo, setModoCandidatoExclusivo] = useState(false);
+  const [conviteToken, setConviteToken] = useState('');
+  const [conviteValido, setConviteValido] = useState(false);
   const [rhUser, setRhUser] = useState(null);
   const [emailLogin, setEmailLogin] = useState('ana.financeirocdt@gmail.com');
   const [enviandoLogin, setEnviandoLogin] = useState(false);
@@ -339,66 +341,41 @@ export default function App() {
     else setErroLogin('Enviamos um link de acesso para seu e-mail. Abra a mensagem neste mesmo navegador para entrar no RH.');
   };
 
-  // Lê parâmetros pré-preenchidos na URL ao abrir o link enviado pelo RH
+  // Carrega os dados da vaga somente por convite validado no servidor.
   useEffect(() => {
-    // Verifica parâmetros na URL (suporta ?emp=...&cargo=...&contrato=... ou ?vaga=...)
-    const searchParams = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const empParam = searchParams.get('emp') || hashParams.get('emp');
-    const vagaToken = searchParams.get('vaga') || hashParams.get('vaga');
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('convite');
+    if (!token) return;
 
-    if (empParam) {
-      const emp = EMPRESAS_DATA.find((e) => e.id === empParam) || EMPRESAS_DATA[0];
-      const cargoParam = searchParams.get('cargo') || hashParams.get('cargo');
-      const cargoObj = emp.cargos.find((c) => c.nome === cargoParam) || emp.cargos[0];
+    setModoCandidatoExclusivo(true);
+    setActiveTab('candidato');
+    setConviteToken(token);
 
-      setRhConfig((prev) => ({
-        ...prev,
-        empresaId: emp.id,
-        cargo: cargoParam || (cargoObj ? cargoObj.nome : prev.cargo),
-        salario:
-          searchParams.get('sal') ||
-          hashParams.get('sal') ||
-          (cargoObj ? cargoObj.salario : prev.salario),
-        dataAdmissao:
-          searchParams.get('adm') || hashParams.get('adm') || prev.dataAdmissao,
-        tempoContrato:
-          searchParams.get('contrato') ||
-          hashParams.get('contrato') ||
-          emp.tempoContratoPadrao,
-        horarioTrabalho:
-          searchParams.get('hor') || hashParams.get('hor') || prev.horarioTrabalho,
-      }));
+    const carregarConvite = async () => {
+      try {
+        const response = await fetch('/api/convites?token=' + encodeURIComponent(token));
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Link inválido ou expirado.');
 
-      setCandidatoData((prev) => ({
-        ...prev,
-        cidade: prev.cidade || emp.cidadePadrao,
-        uf: prev.uf || emp.ufPadrao,
-      }));
-      setActiveTab('candidato');
-      setModoCandidatoExclusivo(true);
-    } else if (vagaToken) {
-      const decoded = decodeRHPayload(vagaToken);
-      if (decoded && decoded.empresaId) {
-        const emp = EMPRESAS_DATA.find((e) => e.id === decoded.empresaId);
-        setRhConfig((prev) => ({
-          ...prev,
-          ...decoded,
-          tempoContrato:
-            decoded.tempoContrato ||
-            (emp ? emp.tempoContratoPadrao : prev.tempoContrato),
-        }));
-        if (emp) {
-          setCandidatoData((prev) => ({
-            ...prev,
-            cidade: prev.cidade || emp.cidadePadrao,
-            uf: prev.uf || emp.ufPadrao,
-          }));
+        const empresa = EMPRESAS_DATA.find((item) => item.id === result.rh?.empresaId);
+        if (!empresa || !result.rh || !result.empresa) {
+          throw new Error('Os dados desta vaga não puderam ser validados. Solicite um novo link ao RH.');
         }
-        setActiveTab('candidato');
-        setModoCandidatoExclusivo(true);
+
+        setRhConfig((prev) => ({ ...prev, ...result.rh }));
+        setCandidatoData((prev) => ({
+          ...prev,
+          cidade: prev.cidade || empresa.cidadePadrao,
+          uf: prev.uf || empresa.ufPadrao,
+        }));
+        setConviteValido(true);
+      } catch (error) {
+        setConviteValido(false);
+        showToast(error.message || 'Não foi possível validar o link. Solicite outro ao RH.', 'error');
       }
-    }
+    };
+
+    carregarConvite();
   }, []);
 
   // Quando troca a Empresa no RH, seleciona automaticamente o primeiro cargo, salário e tempo de contrato dela
@@ -427,29 +404,49 @@ export default function App() {
     setGeneratedUrl('');
   };
 
-  // Gera link compartilhável com parâmetros codificados
-  // Gera link compartilhável com parâmetros explícitos na URL (?emp=...&cargo=...&contrato=...)
-  const handleGerarLink = () => {
-    const params = new URLSearchParams();
-    params.set('emp', rhConfig.empresaId);
-    params.set('cargo', rhConfig.cargo);
-    params.set('sal', rhConfig.salario);
-    params.set('adm', rhConfig.dataAdmissao);
-    params.set('contrato', rhConfig.tempoContrato);
-    params.set('hor', rhConfig.horarioTrabalho);
+  // Gera convite individual, armazenando os dados contratuais no servidor.
+  const handleGerarLink = async () => {
+    if (!supabase) {
+      showToast('A conexão com o RH não está disponível. Entre novamente no painel.', 'error');
+      return;
+    }
 
-    const baseUrl = window.location.origin + window.location.pathname;
-    const fullLink = `${baseUrl}?${params.toString()}`;
-    setGeneratedUrl(fullLink);
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (sessionError || !accessToken) {
+        showToast('Sua sessão do RH expirou. Entre novamente para gerar o link.', 'error');
+        return;
+      }
 
-    // Prepara cidade padrão no form do candidato
-    setCandidatoData({
-      ...EMPTY_CANDIDATO,
-      cidade: empresaAtual.cidadePadrao,
-      uf: empresaAtual.ufPadrao,
-    });
+      const response = await fetch('/api/convites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + accessToken,
+        },
+        body: JSON.stringify({
+          rh: { ...rhConfig },
+          empresa: {
+            nome: empresaAtual.nome,
+            nomeCurto: empresaAtual.nomeCurto,
+            cnpj: empresaAtual.cnpj,
+          },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Não foi possível gerar o convite.');
 
-    showToast('Link da vaga gerado com o tempo de contrato incluso!');
+      setGeneratedUrl(result.url);
+      setCandidatoData({
+        ...EMPTY_CANDIDATO,
+        cidade: empresaAtual.cidadePadrao,
+        uf: empresaAtual.ufPadrao,
+      });
+      showToast('Link individual criado. Ele expira em 7 dias e só pode ser usado uma vez!');
+    } catch (error) {
+      showToast(error.message || 'Erro ao gerar link seguro.', 'error');
+    }
   };
 
   const handleCopiarLink = async () => {
@@ -526,28 +523,27 @@ export default function App() {
       showToast('Por favor, marque a caixa de autorização de uso dos dados no final do formulário.', 'error');
       return;
     }
-    if (!supabaseConfigurado || !supabase) {
-      showToast('Não foi possível conectar ao banco de dados. Avise o RH.', 'error');
+    if (!conviteToken || !conviteValido) {
+      showToast('Este formulário precisa ser aberto pelo link válido enviado pelo RH. Solicite um novo convite.', 'error');
       return;
     }
 
-    const payload = {
-      rh: { ...rhConfig },
-      empresa: {
-        nome: empresaAtual.nome,
-        nomeCurto: empresaAtual.nomeCurto,
-        cnpj: empresaAtual.cnpj,
-      },
-      candidato: { ...candidatoData },
-    };
+    try {
+      const response = await fetch('/api/enviar-ficha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: conviteToken,
+          candidato: { ...candidatoData },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'A ficha não foi enviada. Avise o RH.');
 
-    const { error } = await supabase
-      .from('fichas')
-      .insert(payload);
-
-    if (error) {
+      setConviteValido(false);
+    } catch (error) {
       console.error('Erro ao enviar ficha:', error);
-      showToast('A ficha não foi enviada. Tente novamente ou avise o RH. ' + error.message, 'error');
+      showToast(error.message || 'A ficha não foi enviada. Tente novamente ou avise o RH.', 'error');
       return;
     }
 
