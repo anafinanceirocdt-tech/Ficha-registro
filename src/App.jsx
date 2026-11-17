@@ -541,11 +541,9 @@ export default function App() {
       candidato: { ...candidatoData },
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('fichas')
-      .insert(payload)
-      .select('id, criado_em')
-      .single();
+      .insert(payload);
 
     if (error) {
       console.error('Erro ao enviar ficha:', error);
