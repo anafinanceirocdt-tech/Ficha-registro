@@ -620,20 +620,7 @@ export default function App() {
               <span>{modoCandidatoExclusivo ? 'Visualizar Ficha' : '3. Ficha Sayddel (PDF)'}</span>
             </button>
 
-            {modoCandidatoExclusivo && (
-              <button
-                type="button"
-                onClick={() => {
-                  setModoCandidatoExclusivo(false);
-                  setActiveTab('rh');
-                  window.history.replaceState({}, '', window.location.pathname);
-                }}
-                className="ml-1 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-white underline"
-                title="Voltar para visão administrativa do RH"
-              >
-                Modo RH
-              </button>
-            )}
+
           </nav>
         </div>
       </header>
@@ -1759,13 +1746,7 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-12 border-b-2 border-black text-xs">
-                  <div className="col-span-6 border-r border-black p-2">
-                    <span className="block text-[9px] font-bold uppercase text-slate-600">
-                      CTPS e Série
-                    </span>
-                    <span className="font-semibold">{candidatoData.ctpsNumeroSerie || ' '}</span>
-                  </div>
-                  <div className="col-span-6 p-2">
+                  <div className="col-span-12 p-2">
                     <span className="block text-[9px] font-bold uppercase text-slate-600">
                       Data de Emissão da CTPS
                     </span>
