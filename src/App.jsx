@@ -214,6 +214,7 @@ const EMPTY_CANDIDATO = {
   cidade: '',
   uf: 'SC',
   telefone: '',
+  email: '',
   dependentes: [],
   autorizacaoAceita: false,
 };
@@ -1560,6 +1561,22 @@ export default function App() {
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-600 focus:outline-none"
                   />
                 </div>
+
+                <div className="col-span-full">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    E-mail para contato *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={candidatoData.email}
+                    onChange={(e) =>
+                      setCandidatoData((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    placeholder="seuemail@exemplo.com"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-600 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1918,6 +1935,15 @@ export default function App() {
                       Telefone
                     </span>
                     <span className="font-semibold">{candidatoData.telefone || ' '}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-12 border-b-2 border-black text-xs">
+                  <div className="col-span-12 p-2">
+                    <span className="block text-[9px] font-bold uppercase text-slate-600">
+                      E-mail para contato
+                    </span>
+                    <span className="font-semibold">{candidatoData.email || ' '}</span>
                   </div>
                 </div>
 
