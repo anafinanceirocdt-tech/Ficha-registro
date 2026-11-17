@@ -1267,11 +1267,11 @@ export default function App() {
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="text-base font-bold text-slate-900">2. Documentação</h3>
                 <p className="text-xs text-slate-500">
-                  Caso possua CTPS Digital, o número é o próprio CPF e a série são os 4 últimos dígitos.
+                  Informe a data de emissão da sua Carteira de Trabalho.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">CPF *</label>
                   <input
@@ -1317,31 +1317,15 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    CTPS e Série *
+                    Data de Emissão da CTPS *
                   </label>
                   <input
-                    type="text"
+                    type="date"
                     required
-                    value={candidatoData.ctpsNumeroSerie}
-                    onChange={(e) =>
-                      setCandidatoData((prev) => ({ ...prev, ctpsNumeroSerie: e.target.value }))
-                    }
-                    placeholder="Ex: 1234567 / 0010"
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Emissão CTPS e UF
-                  </label>
-                  <input
-                    type="text"
                     value={candidatoData.ctpsEmissaoUF}
                     onChange={(e) =>
                       setCandidatoData((prev) => ({ ...prev, ctpsEmissaoUF: e.target.value }))
                     }
-                    placeholder="Ex: 15/03/2021 - SC"
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:border-emerald-600 focus:outline-none"
                   />
                 </div>
@@ -1783,9 +1767,9 @@ export default function App() {
                   </div>
                   <div className="col-span-6 p-2">
                     <span className="block text-[9px] font-bold uppercase text-slate-600">
-                      Data de Emissão da CTPS e UF
+                      Data de Emissão da CTPS
                     </span>
-                    <span className="font-semibold">{candidatoData.ctpsEmissaoUF || ' '}</span>
+                    <span className="font-semibold">{formatDateBR(candidatoData.ctpsEmissaoUF) || ' '}</span>
                   </div>
                 </div>
 
