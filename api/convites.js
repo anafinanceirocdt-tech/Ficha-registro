@@ -19,6 +19,27 @@ export default async function handler(req, res) {
   try {
     const admin = adminClient();
 
+    if (req.method === 'GET' && req.query?.historico === '1') {
+      if (!ANON_KEY) return res.status(500).json({ error: 'Configuração de autenticação incompleta.' });
+      const authHeader = req.headers.authorization || '';
+      const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!accessToken) return res.status(401).json({ error: 'Acesso do RH não autenticado.' });
+
+      const authClient = createClient(URL, ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data: authData, error: authError } = await authClient.auth.getUser(accessToken);
+      if (authError || authData.user?.email?.toLowerCase() !== RH_EMAIL) {
+        return res.status(403).json({ error: 'Somente o RH autorizado pode consultar os convites.' });
+      }
+
+      const { data, error } = await admin
+        .from('convites_ficha')
+        .select('id, token_value, rh, empresa, expires_at, used_at, criado_em, candidato_nome, ficha_id')
+        .order('criado_em', { ascending: false });
+
+      if (error) throw error;
+      return res.status(200).json({ convites: data || [] });
+    }
+
     if (req.method === 'GET') {
       const token = String(req.query?.token || '');
       if (!/^[a-f0-9]{64}$/i.test(token)) return res.status(400).json({ error: 'Link inválido.' });
@@ -56,6 +77,7 @@ export default async function handler(req, res) {
       const token = randomBytes(32).toString('hex');
       const { error } = await admin.from('convites_ficha').insert({
         token_hash: hashToken(token),
+        token_value: token,
         rh,
         empresa,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
