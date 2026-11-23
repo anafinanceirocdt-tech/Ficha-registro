@@ -606,13 +606,17 @@ export default function App() {
 
   const handleExcluirFichaHistorico = async (id) => {
     if (!supabase || !rhUser) return;
+    const ficha = fichasSalvas.find((item) => item.id === id);
+    const nome = ficha?.candidato?.nomeCompleto || 'esta ficha';
+    if (!window.confirm(`Tem certeza de que deseja excluir permanentemente a ficha de ${nome}? Essa ação não poderá ser desfeita.`)) return;
+
     const { error } = await supabase.from('fichas').delete().eq('id', id);
     if (error) {
       showToast('Não foi possível excluir a ficha: ' + error.message, 'error');
       return;
     }
     setFichasSalvas((atuais) => atuais.filter((f) => f.id !== id));
-    showToast('Ficha excluída do banco de dados.', 'info');
+    showToast('Ficha excluída permanentemente do banco de dados.', 'info');
   };
 
   const fichasFiltradas = fichasSalvas.filter((f) => {
@@ -1252,10 +1256,11 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => handleExcluirFichaHistorico(ficha.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Excluir do histórico"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 text-xs font-semibold transition-colors cursor-pointer"
+                          title="Excluir ficha permanentemente"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Excluir ficha
                         </button>
                       </div>
                     </div>
