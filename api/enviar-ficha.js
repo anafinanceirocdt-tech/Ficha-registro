@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Dados do formulário inválidos.' });
     }
     const emailContato = String(candidato.email || '').trim();
-    if (!String(candidato.nomeCompleto || '').trim() || !String(candidato.cpf || '').trim() || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(emailContato) || candidato.autorizacaoAceita !== true) {
+    if (!String(candidato.nomeCompleto || '').trim() || !String(candidato.cpf || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContato) || candidato.autorizacaoAceita !== true) {
       return res.status(400).json({ error: 'Confira o nome, CPF, e-mail para contato e autorização de uso dos dados.' });
     }
 
